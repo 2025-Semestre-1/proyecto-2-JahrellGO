@@ -1,0 +1,503 @@
+"""
+Taller de programacion
+Proyecto 2
+Estudiante: Jahrell Gourzong Ortiz
+"""
+
+import tkinter as tk
+from tkinter import filedialog, simpledialog, messagebox
+import random
+
+FILAS = 22
+COLUMNAS = 12
+TAM_CELDA = 30
+
+COLORES = {
+    "O": "yellow",
+    "I": "cyan",
+    "L": "orange",
+    "J": "blue",
+    "T": "purple",
+    "Z": "red",
+    "S": "green",
+    "+": "grey",
+    0: "black",
+    "U": "pink",
+    "P": "brown"
+    
+}
+
+PIEZAS = {
+    "O": [[1, 1], [1, 1]],
+    "I": [[1, 1, 1, 1]],
+    "L": [[1, 0], [1, 0], [1, 1]],
+    "J": [[0, 1], [0, 1], [1, 1]],
+    "T": [[1, 1, 1], [0, 1, 0]],
+    "Z": [[1, 1, 0], [0, 1, 1]],
+    "S": [[0, 1, 1], [1, 1, 0]],
+    "U": [[1, 0, 1], [1, 1, 1]],
+    "P": [[0, 1, 0], [1, 1, 1], [0, 1, 0]]
+}
+
+pausado = False
+matriz = []
+pieza_actual = None
+tipo_pieza = ""
+x_pieza = 0
+y_pieza = 0
+puntaje = 0
+lineas_eliminadas = 0
+canvas = None
+root = None
+etiqueta_puntaje = None
+etiqueta_lineas = None
+nombre_jugador = ""
+
+
+#E:Ninguna
+#S:Crea la matriz del juego
+#R:Los bordes de la matriz tienen que estar representados con un "+"
+def crear_matriz():
+    global matriz
+    matriz = [[0 for _ in range(COLUMNAS)] for _ in range(FILAS)]
+
+    for i in range(FILAS):
+        for j in range(COLUMNAS):
+            if i == 0 or i == FILAS - 1 or j == 0 or j == COLUMNAS - 1:
+                matriz[i][j] = "+"
+    
+    centro_fila, centro_col = FILAS // 2, COLUMNAS // 2
+    matriz[centro_fila][centro_col] = "+"
+    matriz[centro_fila - 1][centro_col] = "+"
+    matriz[centro_fila][centro_col - 1] = "+"
+
+
+#E:Nnguna
+#S:Hace caer una pieza de manera aleatoria
+#R:Ninguna
+def nueva_pieza():
+    global pieza_actual, tipo_pieza, x_pieza, y_pieza
+    tipo_pieza = random.choice(list(PIEZAS.keys()))
+    pieza_actual = PIEZAS[tipo_pieza]
+    x_pieza = COLUMNAS // 2 - len(pieza_actual[0]) // 2
+    y_pieza = 1
+
+
+#E:Las posiciones del tablero y la pieza
+#S:Verifica que las piezas no esten chocando entre ellas y los bordes
+#R:Ninguna
+def colision(x, y, pieza):
+    for i, fila in enumerate(pieza):
+        for j, celda in enumerate(fila):
+            if celda:
+                nx = x + j
+                ny = y + i
+                if ny >= FILAS - 1:  
+                    return True
+                if nx <= 0 or nx >= COLUMNAS - 1:  
+                    return True
+                if matriz[ny][nx] != 0:
+                    return True
+    return False
+
+
+#E:Nnguna
+#S:Fija una pieza al tocar el fondo
+#R:Nnguna
+def fijar_pieza():
+    global root
+    for i, fila in enumerate(pieza_actual):
+        for j, celda in enumerate(fila):
+            if celda:
+                matriz[y_pieza + i][x_pieza + j] = tipo_pieza
+    eliminar_lineas()
+    nueva_pieza()
+    if colision(x_pieza, y_pieza, pieza_actual):
+        game_over()
+
+
+#E:Ninguna
+#S:Al perder muestra una pantalla de game over
+#R:Ninguna
+def game_over():
+    canvas.create_text(180, 330, text="GAME OVER", font=("Arial", 24), fill="red")
+    root.unbind("<Key>")
+    guardar_en_ranking()
+    mostrar_estadisticas_finales() 
+        
+
+#E:Ninguna
+#S:Elimina la fila que ya tene todos sus espacios llenos
+#R:Ninguna
+def eliminar_lineas():
+    global matriz, puntaje, lineas_eliminadas
+
+    nuevas = []
+    eliminadas = 0
+    for i in range(1, FILAS - 1):
+        completa = True
+        for j in range(1, COLUMNAS - 1):
+            if matriz[i][j] in (0, "+"):
+                completa = False
+                break
+        if completa:
+            eliminadas += 1
+            nuevas = [["+"] + [0] * (COLUMNAS - 2) + ["+"]] + nuevas
+        else:
+            nuevas += [matriz[i]]  
+    matriz = [matriz[0]] + nuevas + [matriz[-1]]
+    puntaje += eliminadas * 100
+    lineas_eliminadas += eliminadas
+    actualizar_puntaje()
+
+
+#E:Las posiciones del tablero
+#S:Verifica si se puede seguir moviendo la pieza
+#R:Ninguna
+def mover(dx, dy):
+    global x_pieza, y_pieza
+    if not colision(x_pieza + dx, y_pieza + dy, pieza_actual):
+        x_pieza += dx
+        y_pieza += dy
+        dibujar()
+
+
+#E:Ninguna
+#S:Rota la pieza que va cayendo
+#R:Ninguna
+def rotar():
+    global pieza_actual
+    rotada = [list(fila) for fila in zip(*pieza_actual[::-1])]
+    if not colision(x_pieza, y_pieza, rotada):
+        pieza_actual = rotada
+        dibujar()
+
+#E:Ninguna
+#S:Hace que la pieza vaya cayendo
+#R:Ninguna
+def actualizar():
+    global y_pieza
+    if not pausado:
+        if not colision(x_pieza, y_pieza + 1, pieza_actual):
+            y_pieza += 1
+        else:
+            fijar_pieza()
+        dibujar()
+    root.after(500, actualizar)
+
+#E:Ninguna
+#S:Dibuja la matriz
+#R:Ninguna
+def dibujar():
+    canvas.delete("all")
+    for i in range(FILAS):
+        for j in range(COLUMNAS):
+            valor = matriz[i][j]
+            color = COLORES.get(valor, "white")
+            canvas.create_rectangle(j * TAM_CELDA, i * TAM_CELDA,(j + 1) * TAM_CELDA, (i + 1) * TAM_CELDA, fill=color, outline="gray")
+    for i, fila in enumerate(pieza_actual):
+        for j, celda in enumerate(fila):
+            if celda:
+                xi = (x_pieza + j) * TAM_CELDA
+                yi = (y_pieza + i) * TAM_CELDA
+                canvas.create_rectangle(xi, yi, xi + TAM_CELDA, yi + TAM_CELDA, fill=COLORES[tipo_pieza], outline="white")
+
+#E:Ninguna
+#S:Va actualizando el puntaje que se ve en pantalla
+#R:Ninguna
+def actualizar_puntaje():
+    etiqueta_puntaje.config(text=f"Puntaje: {puntaje}")
+    etiqueta_lineas.config(text=f"Líneas: {lineas_eliminadas}")
+
+
+#E:Un evento
+#S:Regstra s una tecla ha sido presionada
+#R:Ninguna
+def tecla(event):
+    global pausado
+    if event.keysym == "Left":
+        mover(-1, 0)
+    elif event.keysym == "Right":
+        mover(1, 0)
+    elif event.keysym == "Down":
+        mover(0, 1)
+    elif event.keysym == "Up":
+        rotar()
+    elif event.keysym == "space":
+        pausado = not pausado
+        
+#E:Ninguna
+#S:Permte guardar la partida en un archivo de texto
+#R:Ninguna
+def guardar_partida():
+    archivo = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Archivos de texto", "*.txt")], initialfile=f"partida_{nombre_jugador}.txt")
+    if archivo:
+        with open(archivo, "w") as f:
+            f.write(f"{tipo_pieza},{x_pieza},{y_pieza},{puntaje},{lineas_eliminadas}\n")
+            for fila in matriz:
+                f.write(",".join(str(c) for c in fila) + "\n")
+
+
+#E:El nombre del archvo que se desea abrir
+#S:Carga una partida que este en un archvo de texto
+#R:Solo permte abrir archivos de texto validos para el juego
+def cargar_partida(nombre_archivo):
+    global matriz, tipo_pieza, pieza_actual, x_pieza, y_pieza, puntaje, lineas_eliminadas
+    try:
+        with open(nombre_archivo, "r") as f:
+            datos = f.readline().strip().split(",")
+            tipo_pieza, x_pieza, y_pieza, puntaje, lineas_eliminadas = datos[0], int(datos[1]), int(datos[2]), int(datos[3]), int(datos[4])
+            pieza_actual = PIEZAS[tipo_pieza]
+            matriz.clear()
+            lineas = [f.readline().strip().split(",") for _ in range(FILAS)]
+            matriz = [[int(c) if c.isdigit() else c for c in fila] for fila in lineas]
+    except Exception as e:
+        print("Error al cargar la partida:", e)
+
+
+#E:Ninguna
+#S:Guarda la informacion de la partida en el ranking
+#R:Ninguna
+def guardar_en_ranking():
+    try:
+        with open("ranking.txt", "a") as archivo:
+            archivo.write(f"{nombre_jugador},{puntaje}\n")  
+    except Exception as e:
+        print("Error al guardar en el ranking:", e)
+
+
+#E:Ninguna
+#S:Crea el menu principal del juego
+#R:Ninguna
+def menu_inicio():
+    ventana_menu = tk.Tk()
+    ventana_menu.title("Tetris Menú Principal")
+    ventana_menu.geometry("300x350")
+    ventana_menu.configure(bg="#222")
+
+    titulo = tk.Label(ventana_menu, text="TETRIS", font=("Arial", 20, "bold"), bg="#222", fg="white")
+    titulo.pack(pady=20)
+
+    btn_jugar = tk.Button(ventana_menu, text="Jugar", font=("Arial", 14), command=lambda: iniciar_juego(ventana_menu))
+    btn_jugar.pack(pady=5)
+
+    btn_cargar = tk.Button(ventana_menu, text="Cargar partida", font=("Arial", 14), command=seleccionar_partida)
+    btn_cargar.pack(pady=5)
+
+    btn_salir = tk.Button(ventana_menu, text="Salir", font=("Arial", 14), command=ventana_menu.destroy)
+    btn_ranking = tk.Button(ventana_menu, text="Ver ranking", font=("Arial", 14), command=mostrar_ranking)
+    btn_ranking.pack(pady=5)
+
+    btn_salir.pack(pady=5)
+
+    ventana_menu.mainloop()
+
+
+#E:La ventana del menu
+#S:Crea la ventana del juego y permite jugar
+#R:Ninguna
+def iniciar_juego(ventana_menu):
+    global nombre_jugador
+    nombre_jugador = simpledialog.askstring("Nombre del jugador", "Ingrese su nombre:")
+    if not nombre_jugador:
+        return
+    ventana_menu.destroy()
+    global root, canvas, etiqueta_puntaje, etiqueta_lineas, puntaje, lineas_eliminadas
+    puntaje = 0
+    lineas_eliminadas = 0
+    root = tk.Tk()
+    root.title(f"Tetris - Jugador: {nombre_jugador}")
+
+    marco = tk.Frame(root)
+    marco.pack()
+
+    canvas = tk.Canvas(marco, width=COLUMNAS * TAM_CELDA, height=FILAS * TAM_CELDA)
+    canvas.grid(row=0, column=0, rowspan=3)
+
+    btn_guardar = tk.Button(marco, text="Guardar", command=guardar_partida)
+    btn_guardar.grid(row=0, column=1, padx=10, pady=5)
+
+    btn_salir_partida = tk.Button(marco, text="Salir", command=salir_partida)
+    btn_salir_partida.grid(row=3, column=1, pady=10)
+
+    etiqueta_puntaje = tk.Label(marco, text=f"Puntaje: {puntaje}", font=("Arial", 12))
+    etiqueta_puntaje.grid(row=1, column=1)
+
+    etiqueta_lineas = tk.Label(marco, text=f"Líneas: {lineas_eliminadas}", font=("Arial", 12))
+    etiqueta_lineas.grid(row=2, column=1)
+
+    crear_matriz()
+    nueva_pieza()
+    dibujar()
+    actualizar_puntaje()
+    root.bind("<Key>", tecla)
+    actualizar()
+    root.mainloop()
+
+
+
+#E:El nombre del archivo que se desea abrir
+#S:Permite iniciar el juego desde un archivo
+#R:Solo permite abrir archivos de texto
+def iniciar_juego_desde_archivo(archivo):
+    global root, canvas, etiqueta_puntaje, etiqueta_lineas
+    root = tk.Tk()
+    root.title("Tetris Cargar Partida")
+
+    marco = tk.Frame(root)
+    marco.pack()
+
+    canvas = tk.Canvas(marco, width=COLUMNAS * TAM_CELDA, height=FILAS * TAM_CELDA)
+    canvas.grid(row=0, column=0, rowspan=3)
+
+    btn_guardar = tk.Button(marco, text="Guardar", command=guardar_partida)
+    btn_guardar.grid(row=0, column=1, padx=10, pady=5)
+
+    btn_salir_partida = tk.Button(marco, text="Salir", command=salir_partida)
+    btn_salir_partida.grid(row=3, column=1, pady=10)
+
+    etiqueta_puntaje = tk.Label(marco, text=f"Puntaje: {puntaje}", font=("Arial", 12))
+    etiqueta_puntaje.grid(row=1, column=1)
+
+    etiqueta_lineas = tk.Label(marco, text=f"Líneas: {lineas_eliminadas}", font=("Arial", 12))
+    etiqueta_lineas.grid(row=2, column=1)
+
+    cargar_partida(archivo)
+    dibujar()
+    actualizar_puntaje()
+    root.bind("<Key>", tecla)
+    actualizar()
+    root.mainloop()
+
+
+#E:Ninguna
+#S:Cierra la ventana de la partida y abre la del menu principal
+#R:Ninguna
+def salir_partida():
+    global root
+    root.destroy()
+    menu_inicio()
+
+
+#E:Ninguna
+#S:Permite selecconar un archivo
+#R:Ninguna
+def seleccionar_partida():
+    archivo = filedialog.askopenfilename(
+        title="Seleccionar partida guardada",
+        filetypes=[("Archivos de texto", "*.txt")])
+    if archivo:
+        iniciar_juego_desde_archivo(archivo)
+
+
+#E:Ninguna
+#S:Permite ver el ranking de los mejores 10 jugadores 
+#R:Ninguna
+def mostrar_ranking():
+    #E:Ninguna
+    #S:Borra la informacon de los rankings
+    #R:Ninguna
+    def borrar_ranking():
+        respuesta = messagebox.askyesno("Confirmar", "¿Deseas borrar todo el ranking?")
+        if respuesta:
+            try:
+                with open("ranking.txt", "w") as f:
+                    pass  
+                messagebox.showinfo("Ranking", "Ranking borrado correctamente.")
+                ranking_ventana.destroy()
+            except:
+                messagebox.showerror("Error", "No se pudo borrar el ranking.")
+
+    ranking_ventana = tk.Toplevel()
+    ranking_ventana.title("Ranking - Top 10")
+    ranking_ventana.geometry("300x350")
+    ranking_ventana.configure(bg="#111")
+
+    tk.Label(ranking_ventana, text="Ranking - Top 10", font=("Arial", 16, "bold"), bg="#111", fg="white").pack(pady=10)
+    try:
+        with open("ranking.txt", "r") as archivo:
+            datos = []
+            for line in archivo:
+                partes = line.strip().split(",")
+                if len(partes) == 2 and partes[1].isdigit():
+                    datos.append((partes[0], int(partes[1])))
+            datos.sort(key=lambda x: x[1], reverse=True)
+            top10 = datos[:10]
+
+            for i, (nombre, puntaje) in enumerate(top10):
+                texto = f"{i+1}. {nombre} - {puntaje}"
+                tk.Label(ranking_ventana, text=texto, font=("Arial", 12), bg="#111", fg="white").pack()
+    except FileNotFoundError:
+        tk.Label(ranking_ventana, text="No hay datos de ranking aún.", bg="#111", fg="white").pack()
+    except Exception as e:
+        tk.Label(ranking_ventana, text=f"Error: {e}", bg="#111", fg="red").pack()
+
+    tk.Button(ranking_ventana, text="Borrar ranking", command=borrar_ranking).pack(pady=5)
+    tk.Button(ranking_ventana, text="Cerrar", command=ranking_ventana.destroy).pack(pady=5)
+
+
+#E:Ninguna
+#S:Muestra las estadisticas al final de la partida
+#R:Ninguna
+def mostrar_estadisticas_finales():
+    stats_window = tk.Toplevel()
+    stats_window.title("Estadísticas del Juego")
+    stats_window.geometry("400x300")
+    stats_window.resizable(False, False)
+    datos = []
+    try:
+        with open("ranking.txt", "r") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    partes = line.split(",")
+                    if len(partes) == 2:
+                        try:
+                            nombre = partes[0]
+                            puntaje = int(partes[1])
+                            datos.append((nombre, puntaje))
+                        except ValueError:
+                            continue  
+    except FileNotFoundError:
+        pass
+    datos.sort(key=lambda x: x[1], reverse=True)
+    top10 = datos[:10]
+    
+    posicion = "No clasificado"
+    for i, (nombre, puntaje_jugador) in enumerate(top10):
+        if nombre == nombre_jugador and puntaje_jugador == puntaje:
+            posicion = i + 1
+            break
+    
+    bg_color = "#f0f0f0"
+    title_font = ("Arial", 16, "bold")
+    text_font = ("Arial", 12)
+    
+    stats_window.configure(bg=bg_color)
+    
+    tk.Label(stats_window, text="Estadísticas Finales", font=title_font, bg=bg_color).pack(pady=10)
+    
+    tk.Label(stats_window, text=f"Jugador: {nombre_jugador}", font=text_font, bg=bg_color).pack()
+    
+    tk.Label(stats_window, text=f"Puntaje obtenido: {puntaje}", font=text_font, bg=bg_color).pack()
+    
+    tk.Label(stats_window, text=f"Posición en ranking: {posicion}", font=text_font, bg=bg_color).pack(pady=20)
+    
+    tk.Label(stats_window, text="Top 10 Jugadores:", font=text_font, bg=bg_color).pack()
+    
+    frame_ranking = tk.Frame(stats_window, bg=bg_color)
+    frame_ranking.pack()
+    
+    if top10:
+        for i, (nombre, puntos) in enumerate(top10):
+            color = "green" if nombre == nombre_jugador and puntos == puntaje else "black"
+            tk.Label(frame_ranking, 
+                     text=f"{i+1}. {nombre.ljust(15)} {str(puntos).rjust(6)}", 
+                     font=text_font, bg=bg_color, fg=color, anchor="w").grid(row=i, column=0, sticky="w")
+    else:
+        tk.Label(frame_ranking, text="No hay datos de ranking aún", font=text_font, bg=bg_color).grid(row=0, column=0)
+    
+    tk.Button(stats_window, text="Cerrar", command=stats_window.destroy).pack(pady=10)
+    
+menu_inicio()
+
